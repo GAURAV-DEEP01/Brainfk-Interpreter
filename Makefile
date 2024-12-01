@@ -5,8 +5,10 @@ OUT = bfk
 
 all: build 
 
-build: $(SRC)
-	$(GXX) $(SRC) -o $(OUT)
+build: clean $(SRC)
+	$(GXX) $(SRC) $(CFLAGS) -o $(OUT)
 
 clean:
-	rm -f $(SRC) 
+	rm -f $(OUT) 
+
+.PHONY: all clean
