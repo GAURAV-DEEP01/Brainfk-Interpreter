@@ -5,6 +5,7 @@
 
 #define BUFFER_SIZE 256
 
+int test = 0;
 typedef enum tokens {
  OUTPUT = '.',
  INPUT = ',',
@@ -53,6 +54,8 @@ statement_buffer_t* create_statement_buffer(size_t capacity);
 void increase_buffer_capacity(statement_buffer_t *buffer);
 
 void append_char(statement_buffer_t* buffer, char val);
+
+void clear_statement_buffer(statement_buffer_t *buffer);
 
 
 stack_t* create_stack(size_t capacity);
@@ -127,7 +130,7 @@ void stack_push(stack_t* stack, size_t index){
 
 size_t stack_pop(stack_t* stack){
     if(is_empty(stack)){
-        fprintf(stderr, "\nEmpty stack pop operation something went wrong! I guess\n");
+        fprintf(stderr, "\nEmpty stack pop operation something went wrong!\n");
         exit(0);
     }
     return stack->container[stack->top--];
@@ -135,7 +138,7 @@ size_t stack_pop(stack_t* stack){
 
 size_t stack_top(stack_t* stack){
     if(is_empty(stack)){
-        fprintf(stderr, "\nEmpty stack access something went wrong! I guess\n");
+        fprintf(stderr, "\nEmpty stack access something went wrong!\n");
         exit(0);
     }
     return stack->container[stack->top];
@@ -215,7 +218,8 @@ bool is_statement_complete(statement_buffer_t *buffer, char token){
 }
 
 void modify_buffer(FILE *file,char inputToken, main_buffer_t* buffer, statement_buffer_t *stmtBuffer, stack_t *stack, size_t *lineCount, size_t *columnCount){
-    char consoleInput;
+    char consoleInput;  
+
     switch (inputToken) {
         case INCREMENT: 
             buffer->container[buffer->currentPointer]++;
@@ -242,24 +246,24 @@ void modify_buffer(FILE *file,char inputToken, main_buffer_t* buffer, statement_
             buffer->currentPointer = buffer->currentPointer % BUFFER_SIZE;
             return;
         case OPEN_BRACKET:
-            // yet to complete 
-            //      [  +  [  +  +  ]  +  [  +  +  ]  +  ]
-            //      1  2  3  4  5  6  7  8  9  10 11 12 13
             if(!stmtBuffer->isInterpretingStatement){
                 stmtBuffer->isInterpretingStatement = true;
 
                 while(!is_statement_complete(stmtBuffer, inputToken)){
                     validate_token_or_error(inputToken, lineCount, columnCount);
                     append_char(stmtBuffer, inputToken);
+                
                     while((inputToken = fgetc(file)) != EOF && (inputToken == ' ' || inputToken == '\n' || inputToken == '\t'));
                 } 
                 append_char(stmtBuffer, inputToken);
-                
+
                 while(stmtBuffer->currentPointer < stmtBuffer->size){
                     if(stmtBuffer->container[stmtBuffer->currentPointer] == '['){
                         stack_push(stack, stmtBuffer->currentPointer);
+                
                         if(buffer->container[buffer->currentPointer] == 0){
                             while(stmtBuffer->currentPointer <= stmtBuffer->size && is_statement_complete(stmtBuffer, stmtBuffer->container[stmtBuffer->currentPointer++]));
+                           
                             stack_pop(stack);
                             if(is_empty(stack)){
                                 clear_statement_buffer(stmtBuffer);
@@ -269,25 +273,21 @@ void modify_buffer(FILE *file,char inputToken, main_buffer_t* buffer, statement_
                     }else{
                         modify_buffer(file, stmtBuffer->container[stmtBuffer->currentPointer], buffer, stmtBuffer, stack, lineCount, columnCount);
                     }
-                
-                    printf("%c",stmtBuffer->container[stmtBuffer->currentPointer]);
                     stmtBuffer->currentPointer++;
                 }
+                stmtBuffer->currentPointer = 0;
             }
-            // ...
+
             return;
         case CLOSE_BRACKET:
-            // yet to complete 
             if(buffer->container[buffer->currentPointer] == 0){
                 stack_pop(stack);
-                printf("pop");
                 if(is_empty(stack)){
                     clear_statement_buffer(stmtBuffer);
-                    printf("empty\n");
                     return;
                 }
             }else{
-                stmtBuffer->currentPointer = stack_top(stack)+1;
+                stmtBuffer->currentPointer = stack_top(stack);
             }
             return;
         
@@ -297,15 +297,15 @@ void modify_buffer(FILE *file,char inputToken, main_buffer_t* buffer, statement_
 void interpret_source_file(FILE* file){
     char inputToken;
     main_buffer_t buffer;
-    buffer.currentPointer = 0;
     memset(&buffer, 0, sizeof(buffer));
+   
     statement_buffer_t *stmtBuffer = create_statement_buffer(BUFFER_SIZE);
     stack_t *stack = create_stack(BUFFER_SIZE);
+
     size_t lineCount = 1, columnCount = 1;
 
     while ((inputToken = fgetc(file)) != EOF) {
         validate_token_or_error(inputToken, &lineCount, &columnCount);
-
         modify_buffer(file, inputToken , &buffer, stmtBuffer, stack, &lineCount, &columnCount);
     }
 }
