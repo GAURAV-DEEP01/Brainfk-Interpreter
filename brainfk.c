@@ -5,7 +5,6 @@
 
 #define BUFFER_SIZE 256
 
-int test = 0;
 typedef enum tokens {
  OUTPUT = '.',
  INPUT = ',',
@@ -42,7 +41,7 @@ FILE* validate_file_or_error(char* sourceFile);
 
 void interpret_source_file(FILE* file);
 
-void validate_token_or_error(char inputToken, size_t *lineCount, size_t *columnCount);
+bool validate_token_or_error(char inputToken, size_t *lineCount, size_t *columnCount);
 
 bool is_valid_token(char token);
 
@@ -106,12 +105,31 @@ bool is_valid_token(char token){
     }
 }
 
-void increase_stack_capacity(stack_t *stack){
-    stack->container = (size_t*)realloc(stack->container, (stack->capacity = (stack->capacity * 2)));
+bool validate_token_or_error(char inputToken, size_t *lineCount, size_t *columnCount){
+    if(!is_valid_token(inputToken) && inputToken != ' ' && inputToken != '\n' && inputToken != '\t'){
+            fprintf(stderr, "\nError: Invalid Token!\n[line %llu: column %llu] > Symbol '%c' is not a valid token\n", *lineCount, *columnCount, inputToken);
+            exit(-1);
+    }
+    (*columnCount)++;
+    if(inputToken == '\n'){
+        (*lineCount)++;
+        (*columnCount) = 0;
+    }
+    // trust me
+    return true;
+}
+
+
+stack_t* create_stack(size_t capacity){
+    stack_t *stack = (stack_t *)malloc(sizeof(stack_t));
+    stack->top = -1;
+    stack->capacity = capacity;
+    stack->container = (size_t*)malloc(sizeof(size_t) * capacity);
     if(!stack->container){
-        fprintf(stderr, "\nUnable to increase Stack memory\nDamn what are you running this on?\n");
+        fprintf(stderr, "\nUnable to allocate memory for stack\nDamn what are you running this on?\n");
         exit(-1);
     }
+    return stack;
 }
 
 bool is_empty(stack_t* stack){
@@ -130,10 +148,18 @@ void stack_push(stack_t* stack, size_t index){
 
 size_t stack_pop(stack_t* stack){
     if(is_empty(stack)){
-        fprintf(stderr, "\nEmpty stack pop operation something went wrong!\n");
+        fprintf(stderr, "\nEmpty stack Pop operation something went wrong!\n");
         exit(0);
     }
     return stack->container[stack->top--];
+}
+
+void increase_stack_capacity(stack_t *stack){
+    stack->container = (size_t*)realloc(stack->container, (stack->capacity = (stack->capacity * 2)));
+    if(!stack->container){
+        fprintf(stderr, "\nUnable to increase Stack memory\nDamn what are you running this on?\n");
+        exit(-1);
+    }
 }
 
 size_t stack_top(stack_t* stack){
@@ -144,24 +170,6 @@ size_t stack_top(stack_t* stack){
     return stack->container[stack->top];
 }
 
-void append_char(statement_buffer_t* buffer, char val){
-    if((buffer->size + 1) >= buffer->capacity){
-        increase_buffer_capacity(buffer);
-    }
-    buffer->container[buffer->size++] = val;
-}
-
-stack_t* create_stack(size_t capacity){
-    stack_t *stack = (stack_t *)malloc(sizeof(stack_t));
-    stack->top = -1;
-    stack->capacity = capacity;
-    stack->container = (size_t*)malloc(sizeof(size_t) + capacity);
-    if(!stack->container){
-        fprintf(stderr, "\nUnable to allocate memory for stack\nDamn what are you running this on?\n");
-        exit(-1);
-    }
-    return stack;
-}
 
 statement_buffer_t* create_statement_buffer(size_t capacity){
     statement_buffer_t *buffer = (statement_buffer_t *)malloc(sizeof(statement_buffer_t));
@@ -170,12 +178,19 @@ statement_buffer_t* create_statement_buffer(size_t capacity){
     buffer->currentPointer = 0;
     buffer->capacity = capacity;
     buffer->isInterpretingStatement = false;
-    buffer->container = (char*)malloc(sizeof(char) + capacity);
+    buffer->container = (char*)malloc(sizeof(char) * capacity);
     if(!buffer->container){
         fprintf(stderr, "\nUnable to allocate memory for stack\nDamn what are you running this on?\n");
         exit(-1);
     }
     return buffer;
+}
+
+void append_char(statement_buffer_t* buffer, char val){
+    if((buffer->size + 1) >= buffer->capacity){
+        increase_buffer_capacity(buffer);
+    }
+    buffer->container[buffer->size++] = val;
 }
 
 void clear_statement_buffer(statement_buffer_t *buffer){
@@ -192,16 +207,23 @@ void increase_buffer_capacity(statement_buffer_t *buffer){
         exit(-1);
     }
 }
-void validate_token_or_error(char inputToken, size_t *lineCount, size_t *columnCount){
-    if(!is_valid_token(inputToken) && inputToken != ' ' && inputToken != '\n' && inputToken != '\t'){
-            fprintf(stderr, "\nError: Invalid Token!\n[line %llu: column %llu] > Symbol '%c' is not a valid token\n", *lineCount, *columnCount, inputToken);
-            exit(-1);
+
+
+void interpret_source_file(FILE* file){
+    char inputToken;
+    main_buffer_t buffer;
+    memset(&buffer, 0, sizeof(buffer));
+   
+    statement_buffer_t *stmtBuffer = create_statement_buffer(BUFFER_SIZE);
+    stack_t *stack = create_stack(BUFFER_SIZE);
+
+    size_t lineCount = 1, columnCount = 1;
+
+    while ((inputToken = fgetc(file)) != EOF) {
+        validate_token_or_error(inputToken, &lineCount, &columnCount);
+        modify_buffer(file, inputToken , &buffer, stmtBuffer, stack, &lineCount, &columnCount);
     }
-    (*columnCount)++;
-    if(inputToken == '\n'){
-        (*lineCount)++;
-        (*columnCount) = 0;
-    }
+    // memory is freed anyways
 }
 
 bool is_statement_complete(statement_buffer_t *buffer, char token){
@@ -238,12 +260,11 @@ void modify_buffer(FILE *file,char inputToken, main_buffer_t* buffer, statement_
             printf("%c", buffer->container[buffer->currentPointer]);
             return;
         case INCREMENT_POINTER: 
-            buffer->currentPointer++;
-            buffer->currentPointer = buffer->currentPointer % BUFFER_SIZE;
+            buffer->currentPointer =(buffer->currentPointer + 1)% BUFFER_SIZE;
             return;
         case DECREMENT_POINTER:
             buffer->currentPointer--;
-            buffer->currentPointer = buffer->currentPointer % BUFFER_SIZE;
+            buffer->currentPointer = (buffer->currentPointer + 1) % BUFFER_SIZE;
             return;
         case OPEN_BRACKET:
             if(!stmtBuffer->isInterpretingStatement){
@@ -253,7 +274,7 @@ void modify_buffer(FILE *file,char inputToken, main_buffer_t* buffer, statement_
                     validate_token_or_error(inputToken, lineCount, columnCount);
                     append_char(stmtBuffer, inputToken);
                 
-                    while((inputToken = fgetc(file)) != EOF && (inputToken == ' ' || inputToken == '\n' || inputToken == '\t'));
+                    while((inputToken = fgetc(file)) != EOF && (validate_token_or_error(inputToken, lineCount, columnCount) && (inputToken == ' ' || inputToken == '\n' || inputToken == '\t')));
                 } 
                 append_char(stmtBuffer, inputToken);
 
@@ -284,28 +305,10 @@ void modify_buffer(FILE *file,char inputToken, main_buffer_t* buffer, statement_
                 stack_pop(stack);
                 if(is_empty(stack)){
                     clear_statement_buffer(stmtBuffer);
-                    return;
                 }
             }else{
                 stmtBuffer->currentPointer = stack_top(stack);
             }
             return;
-        
     }   
-}
-
-void interpret_source_file(FILE* file){
-    char inputToken;
-    main_buffer_t buffer;
-    memset(&buffer, 0, sizeof(buffer));
-   
-    statement_buffer_t *stmtBuffer = create_statement_buffer(BUFFER_SIZE);
-    stack_t *stack = create_stack(BUFFER_SIZE);
-
-    size_t lineCount = 1, columnCount = 1;
-
-    while ((inputToken = fgetc(file)) != EOF) {
-        validate_token_or_error(inputToken, &lineCount, &columnCount);
-        modify_buffer(file, inputToken , &buffer, stmtBuffer, stack, &lineCount, &columnCount);
-    }
 }
